@@ -1,0 +1,2 @@
+# Optional dependencies for summarize_fauci_findings.py
+pypdf>=4.0.0
