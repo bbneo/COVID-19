@@ -18,7 +18,11 @@ Prerequisites (on your Linux machine):
 Usage:
   python3 summarize_fauci_findings.py --dry-run
   python3 summarize_fauci_findings.py
-  python3 summarize_fauci_findings.py --model llama3.2 --outdir fauci_summaries
+  python3 summarize_fauci_findings.py --model qwen2.5:14b --outdir fauci_summaries
+
+Each document summary is written to disk as soon as that PDF finishes, and
+fauci_findings.md / manifest.json are refreshed after every document so you can
+inspect intermediate results while a long run is still going.
 """
 
 from __future__ import annotations
@@ -533,33 +537,47 @@ def summarize_document(
     )
 
 
-def write_outputs(outdir: Path, results: list[DocResult], overall: str | None) -> None:
+def ensure_outdir(outdir: Path) -> Path:
     outdir.mkdir(parents=True, exist_ok=True)
     docs_dir = outdir / "documents"
     docs_dir.mkdir(parents=True, exist_ok=True)
+    return docs_dir
 
-    for result in results:
-        stem = Path(result.name).stem
-        md_path = docs_dir / f"{stem}.md"
-        json_path = docs_dir / f"{stem}.json"
-        md_path.write_text(
-            f"# {result.name}\n\n"
-            f"- Characters: {result.chars:,}\n"
-            f"- Pages: {result.pages if result.pages is not None else 'unknown'}\n"
-            f"- Chunks used: {result.chunks_used}/{result.chunks_total}\n"
-            f"- Relevant chunks: {result.relevant_chunks}\n\n"
-            f"{result.summary.strip()}\n",
-            encoding="utf-8",
-        )
-        json_path.write_text(
-            json.dumps(asdict(result), indent=2),
-            encoding="utf-8",
-        )
 
+def write_document_result(outdir: Path, result: DocResult) -> tuple[Path, Path]:
+    """Persist one document summary immediately so it can be viewed mid-run."""
+    docs_dir = ensure_outdir(outdir)
+    stem = Path(result.name).stem
+    md_path = docs_dir / f"{stem}.md"
+    json_path = docs_dir / f"{stem}.json"
+    md_path.write_text(
+        f"# {result.name}\n\n"
+        f"- Characters: {result.chars:,}\n"
+        f"- Pages: {result.pages if result.pages is not None else 'unknown'}\n"
+        f"- Chunks used: {result.chunks_used}/{result.chunks_total}\n"
+        f"- Relevant chunks: {result.relevant_chunks}\n\n"
+        f"{result.summary.strip()}\n",
+        encoding="utf-8",
+    )
+    json_path.write_text(json.dumps(asdict(result), indent=2), encoding="utf-8")
+    return md_path, json_path
+
+
+def write_progress_outputs(
+    outdir: Path,
+    results: list[DocResult],
+    *,
+    overall: str | None = None,
+    complete: bool = False,
+) -> None:
+    """Rewrite the combined report/manifest after each document (and at the end)."""
+    ensure_outdir(outdir)
+    status = "complete" if complete else f"in progress ({len(results)} document(s) so far)"
     combined_parts = [
         "# Fauci Findings Summaries",
         "",
         "Generated from Sen. Rand Paul Reading Room documents using a local LLM.",
+        f"Status: {status}",
         "",
     ]
     if overall:
@@ -579,6 +597,8 @@ def write_outputs(outdir: Path, results: list[DocResult], overall: str | None) -
     (outdir / "manifest.json").write_text(
         json.dumps(
             {
+                "status": "complete" if complete else "in_progress",
+                "documents_completed": len(results),
                 "documents": [asdict(result) for result in results],
                 "overall": overall,
             },
@@ -627,6 +647,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
 
     results: list[DocResult] = []
+    ensure_outdir(args.outdir)
     started = time.time()
     for pdf in pdfs:
         try:
@@ -642,8 +663,12 @@ def main(argv: list[str] | None = None) -> int:
             )
         except Exception as exc:  # noqa: BLE001
             print(f"  ! failed on {pdf.name}: {exc}", file=sys.stderr)
+            write_progress_outputs(args.outdir, results, complete=False)
             return 1
         results.append(result)
+        md_path, _json_path = write_document_result(args.outdir, result)
+        write_progress_outputs(args.outdir, results, complete=False)
+        print(f"  wrote {md_path}")
 
     overall = None
     if not args.dry_run and not args.skip_overall and results:
@@ -658,7 +683,7 @@ def main(argv: list[str] | None = None) -> int:
             temperature=args.temperature,
         )
 
-    write_outputs(args.outdir, results, overall)
+    write_progress_outputs(args.outdir, results, overall=overall, complete=True)
     elapsed = time.time() - started
     print(f"\nWrote summaries to {args.outdir.resolve()}")
     print(f"Main report: {args.outdir.resolve() / 'fauci_findings.md'}")
