@@ -259,6 +259,7 @@ class CommandTests(unittest.TestCase):
                 self.assertIn("January 7, 2020", prompts[0])
                 markdown = (output / "JAMA-2020-01-07.summary.md").read_text(encoding="utf-8")
                 self.assertIn("January 2020", markdown)
+                self.assertIn("Date read from the PDF text", markdown)
                 self.assertIn("COVID-19", markdown)
                 self.assertIn("Original Investigation", markdown)
                 self.assertIn("Research Letter", markdown)

@@ -29,18 +29,18 @@ _FILENAME_ISO = re.compile(
 _FILENAME_MONTH = re.compile(
     rf"\b(?P<month>{_MONTH_PATTERN})\.?"
     rf"(?:[-_.\s]+(?P<day>0?[1-9]|[12]\d|3[01])(?!\d))?"
-    rf"[-_.\s]+(?P<year>(?:19|20)\d{2})\b",
+    rf"[-_.\s]+(?P<year>(?:19|20)\d{{2}})\b",
     re.IGNORECASE,
 )
 _TEXT_MDY = re.compile(
     rf"\b(?P<month>{_MONTH_PATTERN})\.?\s+"
     rf"(?:(?P<day>[0-3]?\d)(?:st|nd|rd|th)?,?\s+)?"
-    rf"(?P<year>(?:19|20)\d{2})\b",
+    rf"(?P<year>(?:19|20)\d{{2}})\b",
     re.IGNORECASE,
 )
 _TEXT_DMY = re.compile(
     rf"\b(?P<day>[0-3]?\d)\s+(?P<month>{_MONTH_PATTERN})\.?\s+"
-    rf"(?P<year>(?:19|20)\d{2})\b",
+    rf"(?P<year>(?:19|20)\d{{2}})\b",
     re.IGNORECASE,
 )
 

@@ -174,7 +174,7 @@ def _issue_header_lines(
         details.append(f"Volume {issue.volume}")
     if issue.issue:
         details.append(f"Issue {issue.issue}")
-    details.append(f"Date taken from {issue.date_source.replace('_', ' ')}")
+    details.append(f"Date read from {_date_source_label(issue.date_source)}")
     lines.append(" · ".join(details))
     lines.append("")
     if issue.overview:
@@ -216,6 +216,16 @@ def _article_bullet(article, *, lead: str) -> str:
     if extras:
         sentence += " (" + "; ".join(extras) + ")"
     return f"- {sentence}"
+
+
+def _date_source_label(source: str) -> str:
+    labels = {
+        "pdf_text": "the PDF text",
+        "filename": "the file name",
+        "cli": "--year and --month",
+        "model": "the model",
+    }
+    return labels.get(source, source.replace("_", " "))
 
 
 def _count_phrase(counts: dict[str, int]) -> str:
