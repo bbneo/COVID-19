@@ -14,8 +14,20 @@ from journal_toc.llm import LlmClient
 from journal_toc.render import render_file_markdown, write_model_error, write_summaries
 from journal_toc.summarize import FileSummary, summarize_pdf
 
-DEFAULT_INPUT = Path("~/Dropbox/PublicHealth/Covid-2026/JAMA-2019-2020")
+# The folder on disk is JAMA_2019-2020. The hyphenated name is accepted too.
+SAMPLE_DIRECTORIES = (
+    Path("~/Dropbox/PublicHealth/Covid-2026/JAMA_2019-2020"),
+    Path("~/Dropbox/PublicHealth/Covid-2026/JAMA-2019-2020"),
+)
 logger = logging.getLogger("journal_toc")
+
+
+def default_sample_dir() -> Path:
+    """Return the JAMA sample folder, preferring the one that exists."""
+    for candidate in SAMPLE_DIRECTORIES:
+        if candidate.expanduser().is_dir():
+            return candidate
+    return SAMPLE_DIRECTORIES[0]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,12 +39,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         epilog=(
             "Sample JAMA 2019-2020 contents pages:\n"
-            "  ~/Dropbox/PublicHealth/Covid-2026/JAMA-2019-2020\n"
+            "  ~/Dropbox/PublicHealth/Covid-2026/JAMA_2019-2020\n"
+            "\n"
+            "From that folder, after Ollama is running:\n"
+            "  python /path/to/COVID-19/scripts/summarize_journal_toc.py .\n"
             "\n"
             "Start a local model first, for example:\n"
             "  ollama pull llama3.2\n"
-            "  ollama serve\n"
-            "  python -m journal_toc ~/Dropbox/PublicHealth/Covid-2026/JAMA-2019-2020"
+            "  ollama serve"
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
@@ -99,7 +113,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def collect_pdfs(paths: list[str], *, recursive: bool) -> list[Path]:
     """Resolve files and directories to a sorted list of PDFs."""
-    chosen = paths or [str(DEFAULT_INPUT)]
+    chosen = paths or [str(default_sample_dir())]
     found: list[Path] = []
     missing: list[str] = []
     for raw in chosen:
@@ -123,8 +137,8 @@ def collect_pdfs(paths: list[str], *, recursive: bool) -> list[Path]:
         hint = ""
         if not paths:
             hint = (
-                "\nPass PDF files or a directory, or place the JAMA sample pages at "
-                f"{DEFAULT_INPUT}."
+                "\nPass PDF files or a directory. The sample pages are at "
+                "~/Dropbox/PublicHealth/Covid-2026/JAMA_2019-2020."
             )
         raise TocError(f"No table-of-contents PDFs found:\n  {joined}{hint}")
     if missing:

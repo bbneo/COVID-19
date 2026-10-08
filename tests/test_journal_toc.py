@@ -10,7 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from journal_toc.cli import DEFAULT_INPUT, collect_pdfs, main
+from journal_toc.cli import SAMPLE_DIRECTORIES, collect_pdfs, main
 from journal_toc.dates import parse_filename_date, resolve_date_hint
 from journal_toc.extract import chunk_text, strip_repeated_lines
 from journal_toc.llm import parse_json_content
@@ -203,12 +203,15 @@ class ExtractTests(unittest.TestCase):
 class CommandTests(unittest.TestCase):
     def test_default_sample_directory(self):
         self.assertEqual(
-            DEFAULT_INPUT,
-            Path("~/Dropbox/PublicHealth/Covid-2026/JAMA-2019-2020"),
+            SAMPLE_DIRECTORIES[0],
+            Path("~/Dropbox/PublicHealth/Covid-2026/JAMA_2019-2020"),
         )
 
     def test_missing_sample_directory_is_an_error(self):
-        with mock.patch("journal_toc.cli.DEFAULT_INPUT", Path("/tmp/missing-jama-toc-samples")):
+        with mock.patch(
+            "journal_toc.cli.SAMPLE_DIRECTORIES",
+            (Path("/tmp/missing-jama-toc-samples"),),
+        ):
             self.assertEqual(main([]), 2)
 
     def test_year_requires_month(self):

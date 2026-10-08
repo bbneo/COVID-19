@@ -3,15 +3,14 @@
 
 Sample JAMA issues (2019-2020) live in::
 
-    ~/Dropbox/PublicHealth/Covid-2026/JAMA-2019-2020
+    ~/Dropbox/PublicHealth/Covid-2026/JAMA_2019-2020
 
 Examples::
 
     python scripts/summarize_journal_toc.py \\
-        ~/Dropbox/PublicHealth/Covid-2026/JAMA-2019-2020
+        ~/Dropbox/PublicHealth/Covid-2026/JAMA_2019-2020
 
-    python scripts/summarize_journal_toc.py \\
-        ~/Dropbox/PublicHealth/Covid-2026/JAMA-2019-2020/JAMA-2020-03-17.pdf
+    python scripts/summarize_journal_toc.py .
 """
 
 from __future__ import annotations
