@@ -13,13 +13,14 @@ from journal_toc.errors import LlmError
 
 @dataclass
 class LlmClient:
-    """HTTP client for one local chat model."""
+    """HTTP client for one chat model."""
 
     host: str
     model: str
     backend: str
     timeout: float = 300.0
     num_ctx: int = 8192
+    api_key: str | None = None
 
     def complete(self, system: str, user: str) -> str:
         if self.backend == "ollama":
@@ -40,7 +41,7 @@ class LlmClient:
             ],
             "options": {"temperature": 0, "num_ctx": self.num_ctx},
         }
-        body = _post_json(url, payload, self.timeout)
+        body = _post_json(url, payload, self.timeout, self.api_key)
         try:
             return str(body["message"]["content"])
         except (KeyError, TypeError) as exc:
@@ -60,7 +61,7 @@ class LlmClient:
                 {"role": "user", "content": user},
             ],
         }
-        body = _post_json(url, payload, self.timeout)
+        body = _post_json(url, payload, self.timeout, self.api_key)
         try:
             return str(body["choices"][0]["message"]["content"])
         except (KeyError, IndexError, TypeError) as exc:
@@ -83,10 +84,16 @@ def _chat_url(host: str, backend: str) -> str:
     return base + "/v1/chat/completions"
 
 
-def _post_json(url: str, payload: dict, timeout: float) -> dict:
+def _post_json(url: str, payload: dict, timeout: float, api_key: str | None = None) -> dict:
     data = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json"}
-    api_key = os.environ.get("LOCAL_LLM_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        api_key = (
+            os.environ.get("XAI_API_KEY")
+            or os.environ.get("GROK_API_KEY")
+            or os.environ.get("LOCAL_LLM_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+        )
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     request = urllib.request.Request(url, data=data, headers=headers, method="POST")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import threading
 import unittest
@@ -10,7 +11,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from unittest import mock
 
-from journal_toc.cli import SAMPLE_DIRECTORIES, collect_pdfs, main
+from journal_toc.apikey import load_api_key
+from journal_toc.cli import SAMPLE_DIRECTORIES, _resolve_model, collect_pdfs, main
 from journal_toc.dates import parse_filename_date, resolve_date_hint
 from journal_toc.extract import chunk_text, strip_repeated_lines
 from journal_toc.llm import parse_json_content
@@ -198,6 +200,42 @@ class ExtractTests(unittest.TestCase):
         chunks = chunk_text(text, max_chars=20)
         self.assertGreaterEqual(len(chunks), 2)
         self.assertIn("page one", chunks[0])
+
+
+class ApiKeyTests(unittest.TestCase):
+    def test_stockagent_env_file_is_used_when_environment_is_empty(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / ".env.example").write_text('XAI_API_KEY="your-xai-key"\n', encoding="utf-8")
+            (root / "notes.txt").write_text("GROK_API_KEY=fallback-key-value\n", encoding="utf-8")
+            (root / ".env").write_text('export XAI_API_KEY="xai-real-key-value"\n', encoding="utf-8")
+            with mock.patch.dict(os.environ, {}, clear=True):
+                with mock.patch("journal_toc.apikey.stockagent_directories", return_value=[root]):
+                    found = load_api_key()
+        self.assertIsNotNone(found)
+        assert found is not None
+        value, source = found
+        self.assertEqual(value, "xai-real-key-value")
+        self.assertIn(".env", source)
+        self.assertNotIn("real-key", source)
+
+    def test_grok_backend_points_at_xai_and_reports_a_missing_key(self):
+        args = build_grok_args()
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with mock.patch("journal_toc.apikey.stockagent_directories", return_value=[]):
+                with self.assertRaises(Exception) as caught:
+                    _resolve_model(args)
+        self.assertIn("StockAgent", str(caught.exception))
+
+
+def build_grok_args():
+    from argparse import Namespace
+
+    return Namespace(
+        host="http://127.0.0.1:11434",
+        model="llama3.2",
+        backend="grok",
+    )
 
 
 class CommandTests(unittest.TestCase):

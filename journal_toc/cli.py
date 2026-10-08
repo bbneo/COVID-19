@@ -9,6 +9,7 @@ from pathlib import Path
 
 from journal_toc import __version__
 from journal_toc.dates import coerce_month, coerce_year
+from journal_toc.apikey import load_api_key
 from journal_toc.errors import TocError
 from journal_toc.llm import LlmClient
 from journal_toc.render import render_file_markdown, write_model_error, write_summaries
@@ -41,10 +42,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Sample JAMA 2019-2020 contents pages:\n"
             "  ~/Dropbox/PublicHealth/Covid-2026/JAMA_2019-2020\n"
             "\n"
-            "From that folder, after Ollama is running:\n"
-            "  python /path/to/COVID-19/scripts/summarize_journal_toc.py .\n"
+            "Grok, using the xAI key already stored in the StockAgent folder:\n"
+            "  python scripts/summarize_journal_toc.py --backend grok \\\n"
+            "    ~/Dropbox/PublicHealth/Covid-2026/JAMA_2019-2020\n"
             "\n"
-            "Start a local model first, for example:\n"
+            "Or a local Ollama model:\n"
             "  ollama pull llama3.2\n"
             "  ollama serve"
         ),
@@ -72,9 +74,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--backend",
-        choices=("ollama", "openai"),
+        choices=("ollama", "openai", "grok"),
         default="ollama",
-        help="ollama uses /api/chat. openai uses an OpenAI-compatible /v1/chat/completions server.",
+        help=(
+            "ollama uses a local model. grok calls the Grok API and reads the "
+            "xAI key from the environment or the StockAgent folder. openai uses "
+            "another OpenAI-compatible server."
+        ),
     )
     parser.add_argument(
         "--timeout",
@@ -197,23 +203,26 @@ def main(argv: list[str] | None = None) -> int:
         if (year is None) != (month is None):
             raise TocError("Pass --year and --month together.")
         pdfs = collect_pdfs(args.paths, recursive=args.recursive)
+        host, model, backend, api_key = _resolve_model(args)
     except TocError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     client = LlmClient(
-        host=args.host,
-        model=args.model,
-        backend=args.backend,
+        host=host,
+        model=model,
+        backend=backend,
         timeout=args.timeout,
         num_ctx=args.num_ctx,
+        api_key=api_key,
     )
-    logger.info("Checking that %s answers at %s", args.model, args.host)
+    logger.info("Checking that %s answers at %s", model, host)
     probe = LlmClient(
-        host=args.host,
-        model=args.model,
-        backend=args.backend,
+        host=host,
+        model=model,
+        backend=backend,
         timeout=min(90.0, args.timeout),
         num_ctx=args.num_ctx,
+        api_key=api_key,
     )
     try:
         probe.complete("Reply with a JSON object and no other text.", '{"ok": true}')
@@ -261,6 +270,32 @@ def main(argv: list[str] | None = None) -> int:
     for path in written:
         logger.info("  %s", path)
     return 1 if failures else 0
+
+
+def _resolve_model(args: argparse.Namespace) -> tuple[str, str, str, str | None]:
+    """Apply Grok defaults and load the StockAgent API key when needed."""
+    host = args.host
+    model = args.model
+    backend = args.backend
+    api_key = None
+    if backend == "grok":
+        if host == "http://127.0.0.1:11434":
+            host = "https://api.x.ai/v1"
+        if model == "llama3.2":
+            model = "grok-4.7"
+        backend = "openai"
+    if backend == "openai":
+        found = load_api_key()
+        if args.backend == "grok" and found is None:
+            raise TocError(
+                "No xAI API key found. The script checks XAI_API_KEY, GROK_API_KEY, "
+                "LOCAL_LLM_API_KEY, and OPENAI_API_KEY, then a StockAgent folder in "
+                "your home directory, Documents, Desktop, Dropbox, or wav."
+            )
+        if found is not None:
+            api_key, source = found
+            logger.info("Using API key from %s", source)
+    return host, model, backend, api_key
 
 
 def _parse_month_flag(value: str | None) -> int | None:
