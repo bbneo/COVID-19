@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -134,6 +135,8 @@ TOPIC_ALIASES: dict[str, str] = {
     "ncov": "COVID-19",
 }
 
+logger = logging.getLogger("journal_toc")
+
 SYSTEM_PROMPT = """You catalog articles printed on medical-journal table-of-contents pages.
 The pages are often from JAMA weekly issues in 2019 and 2020. They may be another journal.
 Reply with one JSON object and no other text.
@@ -258,23 +261,37 @@ def summarize_pdf(
     *,
     year: int | None = None,
     month: int | None = None,
-    max_pages: int = 40,
-    chunk_chars: int = 9000,
+    max_pages: int = 200,
+    chunk_chars: int = 3500,
 ) -> FileSummary:
     """Extract one PDF and ask the local model to catalog its articles."""
     raw_pages = extract_pages(path, max_pages=max_pages)
     raw_text = page_text(raw_pages)
     if not has_readable_text(raw_text):
         raise ExtractionError(
-            f"{path.name} has almost no extractable text. "
-            "It may be a scanned image. OCR the file, then run the summarizer again."
+            f"{path.name} is a scanned image with no text layer. "
+            "Use the matching file whose name ends in _ocr.pdf."
         )
     hint = resolve_date_hint(path, raw_text, cli_year=year, cli_month=month)
     model_text = page_text(strip_repeated_lines(raw_pages))
     chunks = chunk_text(model_text, max_chars=chunk_chars)
+    logger.info(
+        "%s: %s pages of text, %s characters, %s model calls",
+        path.name,
+        len(raw_pages),
+        len(model_text),
+        len(chunks),
+    )
     parsed_issues: list[IssueSummary] = []
     last_raw = ""
     for index, chunk in enumerate(chunks, start=1):
+        logger.info(
+            "%s part %s/%s (%s characters). Waiting for the local model.",
+            path.name,
+            index,
+            len(chunks),
+            len(chunk),
+        )
         prompt = build_user_prompt(
             path,
             chunk,

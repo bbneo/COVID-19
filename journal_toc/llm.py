@@ -107,8 +107,9 @@ def _post_json(url: str, payload: dict, timeout: float) -> dict:
         ) from exc
     except TimeoutError as exc:
         raise LlmError(
-            f"The local model at {url} did not respond within {timeout:.0f} seconds. "
-            "Raise --timeout or use a smaller model."
+            f"The local model at {url} did not finish within {timeout:.0f} seconds. "
+            "A year of contents pages is a large request. "
+            "Check that `ollama run llama3.2` answers, then run this file again."
         ) from exc
     try:
         parsed = json.loads(raw)

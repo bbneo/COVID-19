@@ -76,19 +76,29 @@ def build_parser() -> argparse.ArgumentParser:
         default="ollama",
         help="ollama uses /api/chat. openai uses an OpenAI-compatible /v1/chat/completions server.",
     )
-    parser.add_argument("--timeout", type=float, default=300.0, help="Seconds to wait for each model call.")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=900.0,
+        help="Seconds to wait for each model call (default: 900).",
+    )
     parser.add_argument(
         "--num-ctx",
         type=int,
-        default=8192,
-        help="Ollama context length. Lower this if the model cannot load 8192 tokens.",
+        default=4096,
+        help="Ollama context length. Lower this if the model is slow to load.",
     )
-    parser.add_argument("--max-pages", type=int, default=40, help="Most pages to read from each PDF.")
+    parser.add_argument(
+        "--max-pages",
+        type=int,
+        default=200,
+        help="Most pages to read from each PDF (default: 200).",
+    )
     parser.add_argument(
         "--chunk-chars",
         type=int,
-        default=9000,
-        help="Extracted characters sent in one model call.",
+        default=3500,
+        help="Extracted characters sent in one model call (default: 3500).",
     )
     parser.add_argument("--year", type=int, help="Issue year, if you want to set or filter it.")
     parser.add_argument("--month", help="Issue month as a number (1-12) or name such as March.")
@@ -144,10 +154,37 @@ def collect_pdfs(paths: list[str], *, recursive: bool) -> list[Path]:
     if missing:
         for item in missing:
             logger.warning("Skipping %s", item)
-    unique = _dedupe(found)
+    unique = prefer_ocr_copies(_dedupe(found))
     if not unique:
         raise TocError("No PDF files found in the given paths.")
     return sorted(unique, key=lambda item: (item.name.casefold(), str(item)))
+
+
+def prefer_ocr_copies(paths: list[Path]) -> list[Path]:
+    """Drop a scan when the same folder already has its ``_ocr`` copy.
+
+    ``Selected_JAMA_Contents_2019.pdf`` is skipped when
+    ``Selected_JAMA_Contents_2019_ocr.pdf`` is present, because the scan has
+    no text layer and the OCR file is the one the model can read.
+    """
+    ocr_stems = {
+        path.stem.casefold()
+        for path in paths
+        if path.stem.casefold().endswith("_ocr")
+    }
+    kept: list[Path] = []
+    for path in paths:
+        ocr_stem = f"{path.stem}_ocr".casefold()
+        if ocr_stem in ocr_stems:
+            logger.info(
+                "Skipping %s because %s_ocr%s has the text layer.",
+                path.name,
+                path.stem,
+                path.suffix,
+            )
+            continue
+        kept.append(path)
+    return kept
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -170,6 +207,21 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.timeout,
         num_ctx=args.num_ctx,
     )
+    logger.info("Checking that %s answers at %s", args.model, args.host)
+    probe = LlmClient(
+        host=args.host,
+        model=args.model,
+        backend=args.backend,
+        timeout=min(90.0, args.timeout),
+        num_ctx=args.num_ctx,
+    )
+    try:
+        probe.complete("Reply with a JSON object and no other text.", '{"ok": true}')
+    except TocError as exc:
+        print(f"The local model did not answer a short test prompt. {exc}", file=sys.stderr)
+        print("In another terminal, run: ollama run llama3.2", file=sys.stderr)
+        return 1
+    logger.info("Local model answered.")
     summaries: list[FileSummary] = []
     failures = 0
     for index, path in enumerate(pdfs, start=1):
@@ -194,6 +246,8 @@ def main(argv: list[str] | None = None) -> int:
         summaries.append(summary)
         if args.stdout:
             print(render_file_markdown(summary))
+        written = write_summaries(summaries, args.output, save_text=args.save_text)
+        logger.info("Saved %s so far in %s", len(summaries), args.output)
     if not summaries:
         print("No summaries were written.", file=sys.stderr)
         return 1

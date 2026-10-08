@@ -214,6 +214,18 @@ class CommandTests(unittest.TestCase):
         ):
             self.assertEqual(main([]), 2)
 
+    def test_scan_is_skipped_when_ocr_copy_is_present(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "Selected_JAMA_Contents_2019.pdf").write_bytes(b"%PDF-1.4")
+            (root / "Selected_JAMA_Contents_2019_ocr.pdf").write_bytes(b"%PDF-1.4")
+            (root / "JAMA_Contents_Ads_2019.pdf").write_bytes(b"%PDF-1.4")
+            found = [path.name for path in collect_pdfs([str(root)], recursive=False)]
+        self.assertEqual(
+            found,
+            ["JAMA_Contents_Ads_2019.pdf", "Selected_JAMA_Contents_2019_ocr.pdf"],
+        )
+
     def test_year_requires_month(self):
         self.assertEqual(main(["--year", "2020", "missing.pdf"]), 2)
 
@@ -257,9 +269,9 @@ class CommandTests(unittest.TestCase):
                     ]
                 )
                 self.assertEqual(code, 0, prompts)
-                self.assertTrue(prompts)
-                self.assertIn("Clinical Characteristics of Coronavirus Disease 2019 in China", prompts[0])
-                self.assertIn("January 7, 2020", prompts[0])
+                catalog_prompts = [prompt for prompt in prompts if "Clinical Characteristics" in prompt]
+                self.assertEqual(len(catalog_prompts), 1)
+                self.assertIn("January 7, 2020", catalog_prompts[0])
                 markdown = (output / "JAMA-2020-01-07.summary.md").read_text(encoding="utf-8")
                 self.assertIn("January 2020", markdown)
                 self.assertIn("Date read from the PDF text", markdown)
